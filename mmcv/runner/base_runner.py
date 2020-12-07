@@ -111,11 +111,12 @@ class BaseRunner(metaclass=ABCMeta):
         # add a flag for checking if `self.optimizer` comes from `_model`
         self.optimzier_from_model = False
         # add support for optimizer is None.
-        if optimizer is None:
-            # sanity check for whether `_model` cantains self-defined optimizer
-            if hasattr(_model, 'optimizer'):
-                self.optimzier_from_model = True
-                self.optimizer = _model.optimizer
+        # sanity check for whether `_model` cantains self-defined optimizer
+        if hasattr(_model, 'optimizer'):
+            assert optimizer is None, (
+                'Runner and model cannot contain optimizer at the same time.')
+            self.optimzier_from_model = True
+            self.optimizer = _model.optimizer
         else:
             self.optimizer = optimizer
 
