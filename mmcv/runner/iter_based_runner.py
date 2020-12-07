@@ -14,12 +14,14 @@ from .builder import RUNNERS
 from .checkpoint import save_checkpoint
 from .hooks import IterTimerHook
 from .utils import get_host_info
+from ..parallel import is_module_wrapper
 
 
 class IterLoader:
 
-    def __init__(self, dataloader):
+    def __init__(self, dataloader, runner):
         self._dataloader = dataloader
+        self.runner = runner
         self.iter_loader = iter(self._dataloader)
         self._epoch = 0
 
@@ -32,6 +34,13 @@ class IterLoader:
             data = next(self.iter_loader)
         except StopIteration:
             self._epoch += 1
+            if self.runner.is_dynamic_ddp:
+                if hasattr(self._dataloader.dataset, 'update_dataset'):
+                    self._dataloader.dataset.update_dataset()
+                    # the sampler should be updated with the modified dataset
+                    assert hasattr(self._dataloader.sampler, 'update_sampler')
+                    self._dataloader.sampler.update_sampler()
+
             if hasattr(self._dataloader.sampler, 'set_epoch'):
                 self._dataloader.sampler.set_epoch(self._epoch)
             self.iter_loader = iter(self._dataloader)
@@ -51,12 +60,29 @@ class IterBasedRunner(BaseRunner):
     """
 
     def train(self, data_loader, **kwargs):
+        if is_module_wrapper(self.model):
+            _model = self.model.module
+        else:
+            _model = self.model
         self.model.train()
         self.mode = 'train'
+        # check if self.optimizer from model and track it
+        if self.optimzier_from_model:
+            self.optimizer = _model.optimizer
         self.data_loader = data_loader
         self._epoch = data_loader.epoch
         data_batch = next(data_loader)
         self.call_hook('before_train_iter')
+
+        # prepare input args for train_step
+        # running status
+        if self.pass_training_status:
+            running_status = dict(iter=self.iter, epoch=self.epoch)
+            kwargs['running_status'] = running_status
+        # ddp reducer for tracking dynamic computational graph
+        if self.is_dynamic_ddp:
+            kwargs.update(dict(ddp_reducer=self.model.reducer))
+
         outputs = self.model.train_step(data_batch, self.optimizer, **kwargs)
         if not isinstance(outputs, dict):
             raise TypeError('model.train_step() must return a dict')
@@ -111,7 +137,7 @@ class IterBasedRunner(BaseRunner):
                          self._max_iters)
         self.call_hook('before_run')
 
-        iter_loaders = [IterLoader(x) for x in data_loaders]
+        iter_loaders = [IterLoader(x, self) for x in data_loaders]
 
         self.call_hook('before_epoch')
 

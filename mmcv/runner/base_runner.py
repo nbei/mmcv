@@ -45,6 +45,11 @@ class BaseRunner(metaclass=ABCMeta):
             Defaults to None.
         max_epochs (int, optional): Total training epochs.
         max_iters (int, optional): Total training iterations.
+        is_dynamic_ddp (bool, optional): Whether to use ddp in dynamic mode. In
+            dynamic mode, we will keep updating computational graph before each
+            back propagation. Meanwhile, the dataloader will update the dataset
+            and data sampler once catching ``StopIteration``. Default to
+            False.
     """
 
     def __init__(self,
@@ -55,7 +60,9 @@ class BaseRunner(metaclass=ABCMeta):
                  logger=None,
                  meta=None,
                  max_iters=None,
-                 max_epochs=None):
+                 max_epochs=None,
+                 is_dynamic_ddp=False,
+                 pass_training_status=False):
         if batch_processor is not None:
             if not callable(batch_processor):
                 raise TypeError('batch_processor must be callable, '
@@ -99,9 +106,22 @@ class BaseRunner(metaclass=ABCMeta):
 
         self.model = model
         self.batch_processor = batch_processor
-        self.optimizer = optimizer
+
+        # add a flag for checking if `self.optimizer` comes from `_model`
+        self.optimzier_from_model = False
+        # add support for optimizer is None.
+        if optimizer is None:
+            # sanity check for whether `_model` cantains self-defined optimizer
+            if hasattr(_model, 'optimizer'):
+                self.optimzier_from_model = True
+                self.optimizer = _model.optimizer
+        else:
+            self.optimizer = optimizer
+
         self.logger = logger
         self.meta = meta
+        self.is_dynamic_ddp = is_dynamic_ddp
+        self.pass_training_status = pass_training_status
 
         # create work_dir
         if mmcv.is_str(work_dir):
