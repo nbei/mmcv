@@ -63,6 +63,10 @@ class BaseRunner(metaclass=ABCMeta):
                  max_epochs=None,
                  is_dynamic_ddp=False,
                  pass_training_status=False):
+        if is_module_wrapper(model):
+            _model = model.module
+        else:
+            _model = model
         if batch_processor is not None:
             if not callable(batch_processor):
                 raise TypeError('batch_processor must be callable, '
@@ -71,10 +75,7 @@ class BaseRunner(metaclass=ABCMeta):
                           'train_step() and val_step() in the model instead.')
             # raise an error is `batch_processor` is not None and
             # `model.train_step()` exists.
-            if is_module_wrapper(model):
-                _model = model.module
-            else:
-                _model = model
+
             if hasattr(_model, 'train_step') or hasattr(_model, 'val_step'):
                 raise RuntimeError(
                     'batch_processor and model.train_step()/model.val_step() '

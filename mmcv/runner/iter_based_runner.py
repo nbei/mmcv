@@ -9,12 +9,12 @@ import torch
 from torch.optim import Optimizer
 
 import mmcv
+from ..parallel import is_module_wrapper
 from .base_runner import BaseRunner
 from .builder import RUNNERS
 from .checkpoint import save_checkpoint
 from .hooks import IterTimerHook
 from .utils import get_host_info
-from ..parallel import is_module_wrapper
 
 
 class IterLoader:
